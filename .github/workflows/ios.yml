@@ -1,0 +1,57 @@
+name: Build BB鸡 4.0 IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode version
+        run: xcodebuild -version
+      - name: Install XcodeGen and ldid
+        run: brew install xcodegen ldid
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Build unsigned app
+        run: |
+          xcodebuild \
+            -project BBji40.xcodeproj \
+            -scheme BBji40 \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+      - name: Package IPA with ldid
+        run: |
+          APP="build/Build/Products/Release-iphoneos/BBji40.app"
+          test -d "$APP"
+          ldid -S "$APP/BBji40"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry BBji-iOS-4.0.0.ipa Payload
+          echo "--- bundle self-check ---"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
+          unzip -tq BBji-iOS-4.0.0.ipa
+          shasum -a 256 BBji-iOS-4.0.0.ipa
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BBji-iOS-4.0.0-ipa
+          path: BBji-iOS-4.0.0.ipa
+          retention-days: 30
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/main')
+        with:
+          tag_name: v4.0.0-${{ github.run_number }}
+          name: BB鸡 4.0.0 build ${{ github.run_number }}
+          files: BBji-iOS-4.0.0.ipa
+          generate_release_notes: true
